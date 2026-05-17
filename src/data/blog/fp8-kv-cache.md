@@ -3,7 +3,7 @@ title: "An FP8 KV cache for mini-sglang: what I learned shipping the v1"
 pubDatetime: 2026-05-17
 description: "Shipping FP8 KV cache for mini-sglang: 2× capacity, up to 27% faster decode, quality intact."
 tags: ["ml", "inference", "quantization", "sglang"]
-ogImage: ./fp8-kv-cache/A_capacity_comparison.png
+ogImage: ./_fp8-assets/A_capacity_comparison.png
 ---
 
 I built an FP8 KV cache pool for mini-sglang, LMSYS's reference SGLang implementation. The PR is at [sgl-project/mini-sglang#132](https://github.com/sgl-project/mini-sglang/pull/132). 215 lines across 9 files; 135 of implementation, 80 tests and logging. No CUDA.
@@ -38,17 +38,17 @@ Before measuring anything about fp8, I needed to know what the system looked lik
 
 With 8 GiB of VRAM and `--memory-ratio 0.85` (the fraction of free GPU memory the engine claims for weights, workspace, and cache combined), Qwen3-0.6B gets 4.69 GiB of cache budget, which holds 43,928 tokens.
 
-![A — KV cache capacity ceiling, fp16 baseline](./fp8-kv-cache/A_kv_capacity.png)
+![A — KV cache capacity ceiling, fp16 baseline](./_fp8-assets/A_kv_capacity.png)
 
 That number evaporates quickly under load: ten users at 4k context each is enough to fill it, so the cache really is the choke point at modest scale.
 
 Inter-token latency (ITL, the time to produce each token after the first) grows steadily with context, climbing from about 9 ms at 512-token context to 18 ms by 2,048. As context grows, the read of accumulated K and V from HBM starts to dominate, and decode transitions from compute-bound to memory-bound. This is exactly where FP8 should help.
 
-![C — ITL vs input context length](./fp8-kv-cache/C_itl_vs_context.png)
+![C — ITL vs input context length](./_fp8-assets/C_itl_vs_context.png)
 
 Time to first token tells a different story:
 
-![D — TTFT vs input length](./fp8-kv-cache/D_ttft_vs_input.png)
+![D — TTFT vs input length](./_fp8-assets/D_ttft_vs_input.png)
 
 Prefill is dominated by the QKV matrix multiply rather than cache I/O, so halving cache bandwidth shouldn't help here at all. I wanted to know this going in, so I'd be honest about where fp8 wins and where it doesn't. With three trials per config and standard deviations under 1 percent, single-digit deltas later would be real signal.
 
@@ -141,7 +141,7 @@ The factory also fires a loud rank-0 startup warning naming the v1 caveat (uncal
 
 Memory capacity, every config tested, is exactly 2x. Qwen3-0.6B goes from 43,928 cached tokens to 87,857; Qwen3-1.7B from 24,436 to 48,872. Hardware-independent, deterministic, exact.
 
-![A — Cache capacity: fp8 stores exactly 2× tokens at the same VRAM budget](./fp8-kv-cache/A_capacity_comparison.png)
+![A — Cache capacity: fp8 stores exactly 2× tokens at the same VRAM budget](./_fp8-assets/A_capacity_comparison.png)
 
 Latency, on Qwen3-0.6B:
 
@@ -154,7 +154,7 @@ Latency, on Qwen3-0.6B:
 | out=1024, conc=8 | -14.7% | +14.9% |
 | conc=20 | -26.8% | +21.1% |
 
-![C — Inter-token latency per config](./fp8-kv-cache/C_itl_comparison.png)
+![C — Inter-token latency per config](./_fp8-assets/C_itl_comparison.png)
 
 Monotonic: more memory pressure, bigger win. At high concurrency, fp8 delivers a 27 percent median ITL reduction, within striking distance of the theoretical 2x bandwidth ceiling.
 
@@ -162,7 +162,7 @@ The honest cost is that TTFT regresses by 4 to 12 percent on every config. In ea
 
 Whether that matters depends on the workload:
 
-![I — Where the TTFT regression actually matters](./fp8-kv-cache/I_e2e_decomposition.png)
+![I — Where the TTFT regression actually matters](./_fp8-assets/I_e2e_decomposition.png)
 
 For long-form generation (out=1024), TTFT is 1.9 percent of E2E latency in fp16 and 2.3 percent in fp8: real but invisible because decode swamps it. For short interactive completions where TTFT is 30 to 50 percent of E2E, the regression is noticeable. Every workload tested ends up net-faster end-to-end, but where the win comes from varies.
 
@@ -184,19 +184,19 @@ To answer that, I picked two industry-standard benchmarks. GSM8K-200 (grade-scho
 
 GSM8K:
 
-![O — GSM8K-200 accuracy: no regression](./fp8-kv-cache/O_gsm8k_accuracy.png)
+![O — GSM8K-200 accuracy: no regression](./_fp8-assets/O_gsm8k_accuracy.png)
 
 42.5 percent (fp8) versus 41.0 percent (fp16). At n=200 the confidence interval is roughly ±5 percentage points, so this is within noise. The defensible claim is no regression.
 
 The interesting finding was the contingency:
 
-![P — Agreement contingency: symmetric disagreement](./fp8-kv-cache/P_agreement_contingency.png)
+![P — Agreement contingency: symmetric disagreement](./_fp8-assets/P_agreement_contingency.png)
 
 Of the 47 problems where fp8 and fp16 disagree, fp16 wins 22 and fp8 wins 25. The disagreement is symmetric, so fp8 isn't systematically degrading the model; it's perturbing the decision boundary in a balanced way. This refuted an intuition I'd been carrying that fp8 paths differing must mean fp8 was wrong more often. Paths differ (0 of 22 token match) but verdicts agree 76.5 percent of the time with no bias.
 
 NIAH was the strongest result:
 
-![Q — NIAH retrieval: fp8 matches fp16 at every probe](./fp8-kv-cache/Q_niah_heatmap.png)
+![Q — NIAH retrieval: fp8 matches fp16 at every probe](./_fp8-assets/Q_niah_heatmap.png)
 
 Fifteen probes per dtype across three context lengths and five needle depths. fp8 retrieves the needle perfectly at every position, including the 50 percent depth at 8k tokens ("lost in the middle"), which is where KV quantisation typically degrades most. The `clamp(±448).to(fp8)` quantisation is precise enough.
 
