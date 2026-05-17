@@ -10,7 +10,8 @@
     "astro": "astro",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "postinstall": "playwright install chromium"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.14",
